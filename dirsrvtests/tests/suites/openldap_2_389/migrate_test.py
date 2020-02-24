@@ -14,7 +14,7 @@ from lib389.utils import ds_is_older
 
 pytestmark = pytest.mark.tier1
 
-DATADIR = os.path.join(os.path.dirname(__file__), '../../data/openldap_2_389')
+DATADIR1 = os.path.join(os.path.dirname(__file__), '../../data/openldap_2_389/1/')
 
 @pytest.mark.skipif(ds_is_older('1.4.3'), reason="Not implemented")
 def test_parse_openldap_slapdd():
@@ -30,7 +30,7 @@ def test_parse_openldap_slapdd():
         1. 
     """
 
-    with open(os.path.join(DATADIR, 'test.ldif')) as f:
+    with open(os.path.join(DATADIR1, 'test.ldif')) as f:
         print(f.readlines())
 
 
