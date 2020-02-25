@@ -52,7 +52,35 @@ class PluginUnqiueConfigure(MigrationAction):
 class Migration(object):
     # Given an openldap config, we generate a set of migration actions
     # that we store and then execute in order.
-    pass
+    def __init__(self, olconfig, inst):
+        self.olconfig = olconfig
+        self.inst = inst
+        self.plan = []
+        self._gen_migration_plan()
+
+    def __unicode__(self):
+        buff = ""
+        for item in self.plan:
+            buff += "{item}\n"
+        return buff
+
+    def _gen_migration_plan(self):
+        """Order of this module is VERY important!!!
+        """
+        # Examine schema attrs
+        # Examine schema classes
+
+        # Enable plugins (regardless of db)
+
+        # Create/Manage dbs
+
+        # Import data
+
+        pass
+
+
+
+
 
 
 

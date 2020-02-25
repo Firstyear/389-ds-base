@@ -13,6 +13,7 @@ from lib389.password_plugins import PBKDF2Plugin
 from lib389.utils import ds_is_older
 
 from lib389.migrate.openldap.config import olConfig
+from lib389.migrate.plan import Migration
 # from lib389.migrate.plan import *
 
 pytestmark = pytest.mark.tier1
@@ -32,7 +33,6 @@ def test_parse_openldap_slapdd():
     :expectedresults:
         1. 
     """
-
     config_path = os.path.join(DATADIR1, 'slapd.d')
     config = olConfig(config_path)
 
@@ -54,6 +54,15 @@ def test_migrate_openldap_slapdd(topology_st):
     :expectedresults:
         1. 
     """
-    # p1 = PBKDF2Plugin(topology_st.standalone)
-    pass
+
+    inst = topology_st.standalone
+    config_path = os.path.join(DATADIR1, 'slapd.d')
+    config = olConfig(config_path)
+
+    migration = Migration(config, inst.log)
+
+    print(migration.__unicode__())
+
+
+
 
