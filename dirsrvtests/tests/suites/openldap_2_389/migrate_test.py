@@ -12,6 +12,9 @@ from lib389.topologies import topology_st
 from lib389.password_plugins import PBKDF2Plugin
 from lib389.utils import ds_is_older
 
+from lib389.migrate.openldap.config import olConfig
+# from lib389.migrate.plan import *
+
 pytestmark = pytest.mark.tier1
 
 DATADIR1 = os.path.join(os.path.dirname(__file__), '../../data/openldap_2_389/1/')
@@ -30,8 +33,8 @@ def test_parse_openldap_slapdd():
         1. 
     """
 
-    with open(os.path.join(DATADIR1, 'test.ldif')) as f:
-        print(f.readlines())
+    config_path = os.path.join(DATADIR1, 'slapd.d')
+    config = olConfig(config_path)
 
 
 @pytest.mark.skipif(ds_is_older('1.4.3'), reason="Not implemented")
