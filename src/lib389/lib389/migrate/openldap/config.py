@@ -9,7 +9,9 @@
 
 import os
 import logging
+import ldap.schema
 from ldif import LDIFParser
+from lib389.utils import ensure_list_str
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,32 @@ class olDatabase(object):
             for x in sorted(os.listdir(overlay_path))
         ]
 
+# See https://www.python-ldap.org/en/latest/reference/ldap-schema.html
+class olAttribute(ldap.schema.models.AttributeType):
+    def __init__(self, value, log):
+        self.log = log
+        self.log.debug(f"olAttribute value -> {value}")
+        # This split takes {0}(stuff) and will only leave stuf.
+        super().__init__(value.split('}', 1)[1])
+
+    def __str__(self):
+        self.__unicode__()
+
+    def __unicode__(self):
+        f"{self.names}"
+
+class olClass(ldap.schema.models.ObjectClass):
+    def __init__(self, value, log):
+        self.log = log
+        self.log.debug(f"olClass value -> {value}")
+        super().__init__(value.split('}', 1)[1])
+
+    def __str__(self):
+        self.__unicode__()
+
+    def __unicode__(self):
+        f"{self.names}"
+
 class olSchema(object):
     def __init__(self, path, log):
         self.log = log
@@ -70,14 +98,26 @@ class olSchema(object):
         schemas = sorted(os.listdir(path))
         self.log.debug(f"olSchemas -> {schemas}")
 
-        self.schema = []
+        self.raw_schema = []
 
         for schema in schemas:
             entries = ldif_parse(path, schema)
             assert len(entries) == 1
-            self.schema.append(entries.pop())
+            self.raw_schema.append(entries.pop())
+        # self.log.debug(f"raw_schema -> {self.raw_schema}")
 
-        self.log.debug(f"schema -> {self.schema}")
+        self.raw_attrs = []
+        self.raw_classes = []
+
+        for (cn, rs) in self.raw_schema:
+            self.raw_attrs += ensure_list_str(rs['olcAttributeTypes'])
+            self.raw_classes += ensure_list_str(rs['olcObjectClasses'])
+
+        self.attrs = [olAttribute(x, self.log) for x in self.raw_attrs]
+        self.classes = [olClass(x, self.log) for x in self.raw_classes]
+        self.log.debug(f'attrs -> {self.attrs}')
+        self.log.debug(f'classes -> {self.classes}')
+
 
 
 class olConfig(object):
@@ -91,6 +131,7 @@ class olConfig(object):
         self.config_entry = config_entries.pop()
         self.log.debug(self.config_entry)
 
+        # Parse all the child values.
         self.schema = olSchema(os.path.join(path, 'cn=config/cn=schema/'), self.log)
 
         dbs = sorted([
