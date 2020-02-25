@@ -36,6 +36,12 @@ def test_parse_openldap_slapdd():
     config_path = os.path.join(DATADIR1, 'slapd.d')
     config = olConfig(config_path)
 
+    # Do we have databases?
+    assert len(config.databases) == 2
+
+    # Did our schema parse?
+    assert any(['suseModuleConfiguration' in x.names for x in config.schema.classes])
+
 
 @pytest.mark.skipif(ds_is_older('1.4.3'), reason="Not implemented")
 def test_migrate_openldap_slapdd(topology_st):

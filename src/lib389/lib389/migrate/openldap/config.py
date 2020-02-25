@@ -11,7 +11,7 @@ import os
 import logging
 import ldap.schema
 from ldif import LDIFParser
-from lib389.utils import ensure_list_str
+from lib389.utils import ensure_list_str, ensure_str
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,23 @@ class olOverlay(object):
         self.config = entries.pop()
         self.log.debug(f"{self.config}")
 
+        # olcOverlay
+
+        self.name = ensure_str(self.config[1]['olcOverlay'][0]).split('}', 1)[1]
+        self.classes = ensure_list_str(self.config[1]['objectClass'])
+        self.log.debug(f"{self.name} {self.classes}")
+
+        if 'olcMemberOf' in self.classes:
+            # 
+            pass
+        if 'olcRefintConfig' in self.classes:
+            # olcRefintAttribute
+            pass
+        if 'olcUniqueConfig' in self.classes:
+            # olcUniqueURI
+            pass
+
+
 class olDatabase(object):
     def __init__(self, path, name, log):
         self.log = log
@@ -58,6 +75,15 @@ class olDatabase(object):
         assert len(entries) == 1
         self.config = entries.pop()
         self.log.debug(f"{self.config}")
+
+        # olcSuffix, olcDbIndex, entryUUID
+        self.suffix = ensure_str(self.config[1]['olcSuffix'][0])
+        self.idx = name.split('}', 1)[0].split('{', 1)[1]
+        self.uuid = ensure_str(self.config[1]['entryUUID'][0])
+        self.index = ensure_str(self.config[1]['olcDbIndex'][0]).split(' ')
+
+        self.log.debug(f"settings -> {self.suffix}, {self.idx}, {self.uuid}, {self.index}")
+
 
         overlay_path = os.path.join(path, name)
         self.overlays = [
