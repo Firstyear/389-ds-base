@@ -98,24 +98,26 @@ class olAttribute(ldap.schema.models.AttributeType):
         self.log.debug(f"olAttribute value -> {value}")
         # This split takes {0}(stuff) and will only leave stuf.
         super().__init__(value.split('}', 1)[1])
+        self.name_set = set([x.lower() for x in self.names])
 
     def __str__(self):
         self.__unicode__()
 
     def __unicode__(self):
-        f"{self.names}"
+        return f"{self.names}"
 
 class olClass(ldap.schema.models.ObjectClass):
     def __init__(self, value, log):
         self.log = log
         self.log.debug(f"olClass value -> {value}")
         super().__init__(value.split('}', 1)[1])
+        self.name_set = set([x.lower() for x in self.names])
 
     def __str__(self):
         self.__unicode__()
 
     def __unicode__(self):
-        f"{self.names}"
+        return f"{self.names}"
 
 class olSchema(object):
     def __init__(self, path, log):

@@ -59,7 +59,7 @@ def test_migrate_openldap_slapdd(topology_st):
     config_path = os.path.join(DATADIR1, 'slapd.d')
     config = olConfig(config_path)
 
-    migration = Migration(config, inst.log)
+    migration = Migration(config, inst)
 
     print(migration.__unicode__())
 
