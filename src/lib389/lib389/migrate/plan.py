@@ -39,20 +39,20 @@ class SchemaAttributeCreate(MigrationAction):
     def __unicode__(self):
         return f"SchemaAttributeCreate -> {self.attr.__unicode__()}"
 
-class SchemaAttributeAdjust(MigrationAction):
-    def __init__(self, attr, exist_names):
-        self.exist_names = exist_names
+class SchemaAttributeInconsistent(MigrationAction):
+    def __init__(self, attr, ds_attr):
+        self.ds_attr = ds_attr
         self.attr = attr
 
     def __unicode__(self):
-        return f"SchemaAttributeAdjust -> {self.exist_names} to {self.attr.__unicode__()}"
+        return f"SchemaAttributeInconsistent -> {self.ds_attr} to {self.attr.__unicode__()}"
 
 class SchemaAttributeAmbiguous(MigrationAction):
     def __init__(self, attr):
         self.attr = attr
 
     def __unicode__(self):
-        return f"SchemaAttributeAdjust -> {self.attr.__unicode__()}"
+        return f"SchemaAttributeInconsistent -> {self.attr.__unicode__()}"
 
 class SchemaClassCreate(MigrationAction):
     def __init__(self, obj):
@@ -60,6 +60,14 @@ class SchemaClassCreate(MigrationAction):
 
     def __unicode__(self):
         return f"SchemaClassCreate -> {self.obj.__unicode__()}"
+
+class SchemaClassInconsistent(MigrationAction):
+    def __init__(self, obj, ds_obj):
+        self.ds_obj = ds_obj
+        self.obj = obj
+
+    def __unicode__(self):
+        return f"SchemaClassInconsistent -> {self.ds_obj} to {self.obj.__unicode__()}"
 
 class SchemaClassAdjust(MigrationAction):
     pass
@@ -101,44 +109,41 @@ class Migration(object):
         # Get the server schema so that we can query it repeatedly.
         schema = Schema(self.inst)
         schema_attrs = schema.get_attributetypes()
-        schema_attr_names = dict([
-            (set([x.lower() for x in attr.names]), attr)
-            for attr in schema_attrs
-        ])
-
         schema_objects = schema.get_objectclasses()
-        schema_object_names = dict([
-            (set([x.lower() for x in obj.names]), obj)
-            for obj in schema_objects
-        ])
 
         # Examine schema attrs
         for attr in self.olconfig.schema.attrs:
             # For the attr, find if anything has a name overlap in any capacity.
-            overlaps = [ a for a in schema_attr_names.keys() if len(a.intersection(attr.name_set)) > 0]
+            # overlaps = [ (names, ds_attr) for (names, ds_attr) in schema_attr_names if len(names.intersection(attr.name_set)) > 0]
+            overlaps = [ ds_attr for ds_attr in schema_attrs if ds_attr.oid == attr.oid]
             if len(overlaps) == 0:
                 # We need to add attr
                 self.plan.append(SchemaAttributeCreate(attr))
             elif len(overlaps) == 1:
                 # We need to possibly adjust attr
-                exist_attr = overlaps[0]
-                diff = attr.name_set.difference(exist_attr)
-                if len(diff) > 0:
-                    self.plan.append(SchemaAttributeAdjust(attr, exist_attr))
+                ds_attr = overlaps[0]
+                # We need to have a way to compare the two.
+                if attr.inconsistent(ds_attr):
+                    self.plan.append(SchemaAttributeInconsistent(attr, ds_attr))
             else:
-                # Ambiguous attr, the admin must intervene
-                self.plan.append(SchemaAttributeAmbiguous(attr))
+                # Ambiguous attr, the admin must intervene to migrate it.
+                self.plan.append(SchemaAttributeAmbiguous(attr, overlaps))
 
         # Examine schema classes
         for obj in self.olconfig.schema.classes:
             # For the attr, find if anything has a name overlap in any capacity.
-            overlaps = [ o for o in schema_object_names.keys() if len(o.intersection(obj.name_set)) > 0]
+            overlaps = [ ds_obj for ds_obj in schema_objects if ds_obj.oid == obj.oid]
             if len(overlaps) == 0:
                 # We need to add attr
                 self.plan.append(SchemaClassCreate(obj))
             elif len(overlaps) == 1:
                 # We need to possibly adjust the objectClass as it exists
-                pass
+                ds_obj = overlaps[0]
+                if obj.inconsistent(ds_obj):
+                    self.plan.append(SchemaClassInconsistent(obj, ds_obj))
+            else:
+                # This should be an impossible state.
+                raise Exception('impossible state')
 
 
         # Enable plugins (regardless of db)

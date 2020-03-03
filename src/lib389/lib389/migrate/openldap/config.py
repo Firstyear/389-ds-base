@@ -106,6 +106,42 @@ class olAttribute(ldap.schema.models.AttributeType):
     def __unicode__(self):
         return f"{self.names}"
 
+    def inconsistent(self, ds_attr):
+        # Okay, we are attempting to merge self into ds_attr. What do we need to do?
+        #         self.log.debug(f"""
+        # Assert ->
+        # oid {self.oid} ->  {ds_attr.oid}
+        # single_value {self.single_value} ->  {ds_attr.single_value}
+        # sup {self.sup} ->  {ds_attr.sup}
+        # Merge ->
+        # names {self.names} ->  {ds_attr.names}
+        # NOT checking ->
+        # desc {self.desc} ->  {ds_attr.desc}
+        # equality {self.equality} ->  {ds_attr.equality}
+        # substr {self.substr} ->  {ds_attr.substr}
+        # ordering {self.ordering} ->  {ds_attr.ordering}
+        #         """)
+
+        # Assert these are the same:
+        # oid
+        # single_value
+        # sup
+        assert self.oid == ds_attr.oid
+        if self.single_value != ds_attr.single_value:
+            self.log.debug("Inconsistent single_value declaration")
+            return True
+        if set([s.lower() for s in self.sup]) != set([s.lower() for s in ds_attr.sup]):
+            self.log.debug("Inconsistent superior declaration")
+            return True
+        # names
+        if self.name_set != set([n.lower() for n in ds_attr.names]):
+            self.log.debug("Inconsistent name aliases")
+            return True
+
+        # ignore all else.
+        return False
+
+
 class olClass(ldap.schema.models.ObjectClass):
     def __init__(self, value, log):
         self.log = log
@@ -117,7 +153,51 @@ class olClass(ldap.schema.models.ObjectClass):
         self.__unicode__()
 
     def __unicode__(self):
-        return f"{self.names}"
+        return f"""{self.oid} {self.names} may -> {self.may} must -> {self.must} sup -> {self.sup}"""
+
+    def debug_full(self, ds_obj):
+        self.log.debug(f"""
+Assert ->
+oid {self.oid} == {ds_obj.oid}
+names {self.names} == {ds_obj.names}
+kind {self.kind} == {ds_obj.kind}
+sup {self.sup} == {ds_obj.sup}
+must {self.must} ⊇ {ds_obj.must}
+may {self.may} ⊇ {ds_obj.may}
+
+Merge ->
+must {self.must} -> iff ⊇ {ds_obj.must}
+may {self.may} -> iff ⊇ {ds_obj.may}
+
+NOT checking ->
+desc {self.desc} -> {ds_obj.desc}
+obsolete {self.obsolete} -> {ds_obj.obsolete}""")
+
+    def inconsistent(self, ds_obj):
+        assert self.oid == ds_obj.oid
+        # names
+        if self.name_set != set([n.lower() for n in ds_obj.names]):
+            self.log.debug("Inconsistent name aliases")
+            self.debug_full(ds_obj)
+            return True
+        if self.kind != ds_obj.kind:
+            self.log.debug("Inconsistent kind")
+            self.debug_full(ds_obj)
+            return True
+        if set([s.lower() for s in self.sup]) != set([s.lower() for s in ds_obj.sup]):
+            self.log.debug("Inconsistent superior declaration")
+            self.debug_full(ds_obj)
+            return True
+        if set([s.lower() for s in self.must]) != set([s.lower() for s in ds_obj.must]):
+            self.log.debug("Inconsistent Must Set")
+            self.debug_full(ds_obj)
+            return True
+        if set([s.lower() for s in self.may]) != set([s.lower() for s in ds_obj.may]):
+            self.log.debug("Inconsistent May Set")
+            self.debug_full(ds_obj)
+            return True
+        # ignore all else.
+        return False
 
 class olSchema(object):
     def __init__(self, path, log):
