@@ -10,6 +10,7 @@
 import os
 import logging
 import ldap.schema
+from enum import Enum
 from ldif import LDIFParser
 from lib389.utils import ensure_list_str, ensure_str
 
@@ -41,6 +42,13 @@ def db_cond(name):
     return False
 
 
+class olOverlayType(Enum):
+    UNKNOWN = 0
+    MEMBEROF = 1
+    REFINT = 2
+    UNIQUE = 3
+
+
 class olOverlay(object):
     def __init__(self, path, name, log):
         self.log = log
@@ -57,14 +65,23 @@ class olOverlay(object):
         self.log.debug(f"{self.name} {self.classes}")
 
         if 'olcMemberOf' in self.classes:
-            # 
-            pass
-        if 'olcRefintConfig' in self.classes:
+            self.otype = olOverlayType.MEMBEROF
+            #
+        elif 'olcRefintConfig' in self.classes:
+            self.otype = olOverlayType.REFINT
             # olcRefintAttribute
-            pass
-        if 'olcUniqueConfig' in self.classes:
+            self.attrs = ensure_list_str(self.config[1]['olcRefintAttribute'])
+        elif 'olcUniqueConfig' in self.classes:
+            self.otype = olOverlayType.UNIQUE
             # olcUniqueURI
-            pass
+            self.attrs = ensure_list_str([
+                # This is a ldap:///?uid?sub, so split ? [1] will give uid.
+                attr.split('?')[1]
+                for attr in ensure_list_str(self.config[1]['olcUniqueURI'])
+            ])
+        else:
+            self.otype = olOverlayType.UNKNOWN
+            # Should we stash extra details?
 
 
 class olDatabase(object):
@@ -80,7 +97,11 @@ class olDatabase(object):
         self.suffix = ensure_str(self.config[1]['olcSuffix'][0])
         self.idx = name.split('}', 1)[0].split('{', 1)[1]
         self.uuid = ensure_str(self.config[1]['entryUUID'][0])
-        self.index = ensure_str(self.config[1]['olcDbIndex'][0]).split(' ')
+
+        self.index = [
+            tuple(ensure_str(x).split(' '))
+            for x in self.config[1]['olcDbIndex']
+        ]
 
         self.log.debug(f"settings -> {self.suffix}, {self.idx}, {self.uuid}, {self.index}")
 

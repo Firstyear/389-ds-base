@@ -8,6 +8,10 @@
 #
 
 from lib389.schema import Schema
+from lib389.backend import Backends
+from lib389.migrate.openldap.config import olOverlayType
+
+import ldap
 
 class MigrationAction(object):
     def __init__(self):
@@ -24,13 +28,28 @@ class MigrationAction(object):
 
 
 class DatabaseCreate(MigrationAction):
-    pass
+    def __init__(self, suffix, uuid):
+        self.suffix = suffix
+        self.uuid = uuid
 
-class DatabaseDelete(MigrationAction):
-    pass
+    def __unicode__(self):
+        return f"DatabaseCreate -> {self.suffix}, {self.uuid}"
 
 class DatabaseIndexCreate(MigrationAction):
-    pass
+    def __init__(self, suffix, olindex):
+        self.suffix = suffix
+        self.attr = olindex[0]
+        self.type = olindex[1]
+
+    def __unicode__(self):
+        return f"DatabaseIndexCreate -> {self.attr} {self.type}, {self.suffix}"
+
+class DatabaseReindex(MigrationAction):
+    def __init__(self, suffix):
+        self.suffix = suffix
+
+    def __unicode__(self):
+        return f"DatabaseReindex -> {self.suffix}"
 
 class SchemaAttributeCreate(MigrationAction):
     def __init__(self, attr):
@@ -69,23 +88,64 @@ class SchemaClassInconsistent(MigrationAction):
     def __unicode__(self):
         return f"SchemaClassInconsistent -> {self.ds_obj} to {self.obj.__unicode__()}"
 
-class SchemaClassAdjust(MigrationAction):
-    pass
-
 class PluginMemberOfEnable(MigrationAction):
-    pass
+    def __init__(self):
+        pass
 
-class PluginMemberOfConfigure(MigrationAction):
-    pass
+    def __unicode__(self):
+        return "PluginMemberOfEnable"
+
+class PluginMemberOfScope(MigrationAction):
+    def __init__(self, suffix):
+        self.suffix = suffix
+
+    def __unicode__(self):
+        return f"PluginMemberOfScope -> {self.suffix}"
+
+class PluginMemberOfFixup(MigrationAction):
+    def __init__(self, suffix):
+        self.suffix = suffix
+
+    def __unicode__(self):
+        return f"PluginMemberOfFixup -> {self.suffix}"
 
 class PluginRefintEnable(MigrationAction):
-    pass
+    def __init__(self):
+        pass
+        # Set refint delay to 0
 
-class PluginRefintConfigure(MigrationAction):
-    pass
+    def __unicode__(self):
+        return "PluginRefintEnable"
 
-class PluginUnqiueConfigure(MigrationAction):
-    pass
+class PluginRefintAttributes(MigrationAction):
+    def __init__(self, attr):
+        self.attr = attr
+
+    def __unicode__(self):
+        return f"PluginRefintAttributes -> {self.attr}"
+
+class PluginRefintScope(MigrationAction):
+    def __init__(self, suffix):
+        self.suffix = suffix
+
+    def __unicode__(self):
+        return f"PluginRefintScope -> {self.suffix}"
+
+class PluginUniqueConfigure(MigrationAction):
+    # This enables and configures.
+    def __init__(self, suffix, attr):
+        self.suffix = suffix
+        self.attr = attr
+
+    def __unicode__(self):
+        return f"PluginUniqueConfigure -> {self.suffix}, {self.attr}"
+
+class PluginUnknownManual(MigrationAction):
+    def __init__(self, overlay):
+        self.overlay = overlay
+
+    def __unicode__(self):
+        return f"PluginUnknownManual -> {self.overlay.name}, {self.overlay.classes}"
 
 
 class Migration(object):
@@ -103,9 +163,7 @@ class Migration(object):
             buff += f"{item.__unicode__()}\n"
         return buff
 
-    def _gen_migration_plan(self):
-        """Order of this module is VERY important!!!
-        """
+    def _gen_schema_plan(self):
         # Get the server schema so that we can query it repeatedly.
         schema = Schema(self.inst)
         schema_attrs = schema.get_attributetypes()
@@ -145,15 +203,80 @@ class Migration(object):
                 # This should be an impossible state.
                 raise Exception('impossible state')
 
+    def _gen_be_exist_plan(self, oldb, be):
+        # For each index
+        indexes = be.get_indexes()
+        for olindex in oldb.index:
+            # Assert they exist
+            try:
+                indexes.get(olindex[0])
+            except ldap.NO_SUCH_OBJECT:
+                self.plan.append(DatabaseIndexCreate(oldb.suffix, olindex))
 
-        # Enable plugins (regardless of db)
+        # Reindex the db
+        self.plan.append(DatabaseReindex(oldb.suffix))
 
+    def _gen_be_create_plan(self, oldb):
+        # Req db create
+        self.plan.append(DatabaseCreate(oldb.suffix, oldb.uuid))
+        # For each index
+        # Assert we have the index on the db, or req it's creation
+        for olindex in oldb.index:
+            self.plan.append(DatabaseIndexCreate(oldb.suffix, olindex))
+
+        # Reindex the db.
+        self.plan.append(DatabaseReindex(oldb.suffix))
+
+    def _gen_plugin_plan(self, oldb):
+        for overlay in oldb.overlays:
+            if overlay.otype == olOverlayType.UNKNOWN:
+                self.plan.append(PluginUnknownManual(overlay))
+            elif overlay.otype == olOverlayType.MEMBEROF:
+                # Assert memberof enabled.
+                self.plan.append(PluginMemberOfEnable())
+                # Member of scope
+                self.plan.append(PluginMemberOfScope(oldb.suffix))
+                # Memberof fixup task.
+                self.plan.append(PluginMemberOfFixup(oldb.suffix))
+            elif overlay.otype == olOverlayType.REFINT:
+                self.plan.append(PluginRefintEnable())
+                for attr in overlay.attrs:
+                    self.plan.append(PluginRefintAttributes(attr))
+                self.plan.append(PluginRefintScope(oldb.suffix))
+            elif overlay.otype == olOverlayType.UNIQUE:
+                for attr in overlay.attrs:
+                    self.plan.append(PluginUniqueConfigure(oldb.suffix, attr))
+            else:
+                raise Exception("Unknown overlay type, this is a bug!")
+
+
+    def _gen_db_plan(self):
         # Create/Manage dbs
+        # Get the set of current dbs.
+        backends = Backends(self.inst)
 
-        # Import data
+        for db in self.olconfig.databases:
+            # Get the suffix
+            suffix = db.suffix
+            try:
+                # Do we have a db with that suffix already?
+                be = backends.get(suffix)
+                self._gen_be_exist_plan(db, be)
+            except ldap.NO_SUCH_OBJECT:
+                self._gen_be_create_plan(db)
 
-        pass
+            self._gen_plugin_plan(db)
 
+    def _gen_import_plan(self):
+        # Given external ldifs and suffixes, generate plans to handle these.
+        raise Exception("not yet implemented")
+
+    def _gen_migration_plan(self):
+        """Order of this module is VERY important!!!
+        """
+        self._gen_schema_plan()
+        self._gen_db_plan()
+        self._gen_import_plan()
 
 
 
