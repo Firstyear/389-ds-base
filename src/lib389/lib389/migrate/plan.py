@@ -173,8 +173,20 @@ class Migration(object):
         self._schema_oid_do_not_migrate = set([
             # We pre-modified these as they are pretty core, and we don't want
             # them tampered with
+            '2.5.4.2', # knowledgeInformation
             '2.5.4.7', # l, locality
+            '2.5.4.29', # presentationAddress
+            '2.5.4.30', # supportedApplication Context
             '2.5.4.42', # givenName
+            '2.5.4.48', # protocolInformation
+            '2.5.4.54', # dmdName
+            '2.5.6.7', # organizationalPerson
+            '2.5.6.9', # groupOfNames
+            '2.5.6.10', # residentialPerson
+            '2.5.6.12', # applicationEntity
+            '2.5.6.13', # dsa
+            '2.5.6.17', # groupOfUniqueNames
+            '2.5.6.20', # dmd
             # We ignore all of the conflicts/changes from rfc2307 and rfc2307bis
             # as we provide rfc2307compat, which allows both to coexist.
             '1.3.6.1.1.1.1.16', # ipServiceProtocol
