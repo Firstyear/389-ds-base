@@ -51,6 +51,14 @@ class DatabaseReindex(MigrationAction):
     def __unicode__(self):
         return f"DatabaseReindex -> {self.suffix}"
 
+class DatabaseLdifImport(MigrationAction):
+    def __init__(self, suffix, ldif_path):
+        self.suffix = suffix
+        self.ldif_path = ldif_path
+
+    def __unicode__(self):
+        return f"DatabaseLdifImport -> {self.suffix} {self.ldif_path}"
+
 class SchemaAttributeCreate(MigrationAction):
     def __init__(self, attr):
         self.attr = attr
@@ -149,12 +157,48 @@ class PluginUnknownManual(MigrationAction):
 
 
 class Migration(object):
-    # Given an openldap config, we generate a set of migration actions
-    # that we store and then execute in order.
-    def __init__(self, olconfig, inst):
+    def __init__(self, olconfig, inst, ldifs=None):
+        """Generate a migration plan from an openldap config, the instance to migrate too
+        and an optional dictionary of { suffix: ldif_path }.
+
+        The migration plan once generate still needs to be executed, but the idea is that
+        this module connects to a UI program that can allow the plan to be reviewed and
+        accepted. Plan modification is "out of scope", but possible as the array could
+        be manipulated in place.
+        """
         self.olconfig = olconfig
         self.inst = inst
         self.plan = []
+        self.ldifs = ldifs
+        self._schema_oid_do_not_migrate = set([
+            # We pre-modified these as they are pretty core, and we don't want
+            # them tampered with
+            '2.5.4.7', # l, locality
+            '2.5.4.42', # givenName
+            # We ignore all of the conflicts/changes from rfc2307 and rfc2307bis
+            # as we provide rfc2307compat, which allows both to coexist.
+            '1.3.6.1.1.1.1.16', # ipServiceProtocol
+            '1.3.6.1.1.1.1.19', # ipHostNumber
+            '1.3.6.1.1.1.1.20', # ipNetworkNumber
+            '1.3.6.1.1.1.1.26', # nisMapName
+            '1.3.6.1.1.1.1.28', # nisPublicKey
+            '1.3.6.1.1.1.1.29', # nisSecretKey
+            '1.3.6.1.1.1.1.30', # nisDomain
+            '1.3.6.1.1.1.1.31', # automountMapName
+            '1.3.6.1.1.1.1.32', # automountKey
+            '1.3.6.1.1.1.1.33', # automountInformation
+            '1.3.6.1.1.1.2.2', # posixGroup
+            '1.3.6.1.1.1.2.6', # ipHost
+            '1.3.6.1.1.1.2.7', # ipNetwork
+            '1.3.6.1.1.1.2.9', # nisMap
+            '1.3.6.1.1.1.2.11', # ieee802Device
+            '1.3.6.1.1.1.2.12', # bootableDevice
+            '1.3.6.1.1.1.2.13', # nisMap
+            '1.3.6.1.1.1.2.14', # nisKeyObject
+            '1.3.6.1.1.1.2.15', # nisDomainObject
+            '1.3.6.1.1.1.2.16', # automountMap
+            '1.3.6.1.1.1.2.17', # automount
+        ])
         self._gen_migration_plan()
 
     def __unicode__(self):
@@ -171,6 +215,9 @@ class Migration(object):
 
         # Examine schema attrs
         for attr in self.olconfig.schema.attrs:
+            # If we have been instructed to ignore this oid, skip.
+            if attr.oid in self._schema_oid_do_not_migrate:
+                continue
             # For the attr, find if anything has a name overlap in any capacity.
             # overlaps = [ (names, ds_attr) for (names, ds_attr) in schema_attr_names if len(names.intersection(attr.name_set)) > 0]
             overlaps = [ ds_attr for ds_attr in schema_attrs if ds_attr.oid == attr.oid]
@@ -189,6 +236,9 @@ class Migration(object):
 
         # Examine schema classes
         for obj in self.olconfig.schema.classes:
+            # If we have been instructed to ignore this oid, skip.
+            if obj.oid in self._schema_oid_do_not_migrate:
+                continue
             # For the attr, find if anything has a name overlap in any capacity.
             overlaps = [ ds_obj for ds_obj in schema_objects if ds_obj.oid == obj.oid]
             if len(overlaps) == 0:
@@ -269,7 +319,10 @@ class Migration(object):
 
     def _gen_import_plan(self):
         # Given external ldifs and suffixes, generate plans to handle these.
-        raise Exception("not yet implemented")
+        if self.ldifs is None:
+            return
+        for (suffix, ldif_path) in self.ldifs.items():
+            self.plan.append(DatabaseLdifImport(suffix, ldif_path))
 
     def _gen_migration_plan(self):
         """Order of this module is VERY important!!!
@@ -279,7 +332,13 @@ class Migration(object):
         self._gen_import_plan()
 
 
+    def execute_plan(self):
+        """ Do it!"""
+        # First apply everything
+        for item in self.plan:
+            item.apply(self.inst)
 
-
-
+        # Then do post
+        for item in self.plan:
+            item.post()
 

@@ -58,10 +58,16 @@ def test_migrate_openldap_slapdd(topology_st):
     inst = topology_st.standalone
     config_path = os.path.join(DATADIR1, 'slapd.d')
     config = olConfig(config_path)
+    ldifs = {
+        "dc=example,dc=com": os.path.join(DATADIR1, 'example_com.slapcat.ldif'),
+        "dc=example,dc=net": os.path.join(DATADIR1, 'example_net.slapcat.ldif'),
+    }
 
-    migration = Migration(config, inst)
+    migration = Migration(config, inst, ldifs)
 
     print(migration.__unicode__())
+
+    migration.execute_plan()
 
 
 
