@@ -7,7 +7,7 @@
 # --- END COPYRIGHT BLOCK ---
 #
 
-from lib389.schema import Schema
+from lib389.schema import Schema, Resolver
 from lib389.backend import Backends
 from lib389.migrate.openldap.config import olOverlayType
 
@@ -225,6 +225,8 @@ class Migration(object):
         schema_attrs = schema.get_attributetypes()
         schema_objects = schema.get_objectclasses()
 
+        resolver = Resolver(schema_attrs)
+
         # Examine schema attrs
         for attr in self.olconfig.schema.attrs:
             # If we have been instructed to ignore this oid, skip.
@@ -259,7 +261,7 @@ class Migration(object):
             elif len(overlaps) == 1:
                 # We need to possibly adjust the objectClass as it exists
                 ds_obj = overlaps[0]
-                if obj.inconsistent(ds_obj):
+                if obj.inconsistent(ds_obj, resolver):
                     self.plan.append(SchemaClassInconsistent(obj, ds_obj))
             else:
                 # This should be an impossible state.

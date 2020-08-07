@@ -194,7 +194,7 @@ NOT checking ->
 desc {self.desc} -> {ds_obj.desc}
 obsolete {self.obsolete} -> {ds_obj.obsolete}""")
 
-    def inconsistent(self, ds_obj):
+    def inconsistent(self, ds_obj, resolver):
         assert self.oid == ds_obj.oid
         # names
         if self.name_set != set([n.lower() for n in ds_obj.names]):
@@ -205,15 +205,16 @@ obsolete {self.obsolete} -> {ds_obj.obsolete}""")
             self.log.debug("Inconsistent kind")
             self.debug_full(ds_obj)
             return True
+
         if set([s.lower() for s in self.sup]) != set([s.lower() for s in ds_obj.sup]):
             self.log.debug("Inconsistent superior declaration")
             self.debug_full(ds_obj)
             return True
-        if set([s.lower() for s in self.must]) != set([s.lower() for s in ds_obj.must]):
+        if set([resolver.resolve(s) for s in self.must]) != set([resolver.resolve(s) for s in ds_obj.must]):
             self.log.debug("Inconsistent Must Set")
             self.debug_full(ds_obj)
             return True
-        if set([s.lower() for s in self.may]) != set([s.lower() for s in ds_obj.may]):
+        if set([resolver.resolve(s) for s in self.may]) != set([resolver.resolve(s) for s in ds_obj.may]):
             self.log.debug("Inconsistent May Set")
             self.debug_full(ds_obj)
             return True
