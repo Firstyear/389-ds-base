@@ -205,7 +205,6 @@ obsolete {self.obsolete} -> {ds_obj.obsolete}""")
             self.log.debug("Inconsistent kind")
             self.debug_full(ds_obj)
             return True
-
         if set([s.lower() for s in self.sup]) != set([s.lower() for s in ds_obj.sup]):
             self.log.debug("Inconsistent superior declaration")
             self.debug_full(ds_obj)
@@ -216,6 +215,8 @@ obsolete {self.obsolete} -> {ds_obj.obsolete}""")
             return True
         if set([resolver.resolve(s) for s in self.may]) != set([resolver.resolve(s) for s in ds_obj.may]):
             self.log.debug("Inconsistent May Set")
+            self.log.debug("ol -> %s" % [resolver.resolve(s) for s in self.may])
+            self.log.debug("ds -> %s" % [resolver.resolve(s) for s in ds_obj.may])
             self.debug_full(ds_obj)
             return True
         # ignore all else.

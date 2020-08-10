@@ -210,6 +210,8 @@ class Migration(object):
             '1.3.6.1.1.1.2.15', # nisDomainObject
             '1.3.6.1.1.1.2.16', # automountMap
             '1.3.6.1.1.1.2.17', # automount
+            # This schema is buggy, we always skip it as we know the 389 version is correct.
+            '0.9.2342.19200300.100.4.14',
         ])
         self._gen_migration_plan()
 
