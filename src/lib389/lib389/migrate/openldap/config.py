@@ -121,8 +121,11 @@ class olAttribute(ldap.schema.models.AttributeType):
         super().__init__(value.split('}', 1)[1])
         self.name_set = set([x.lower() for x in self.names])
 
+    def schema_str(self):
+        return super().__str__()
+
     def __str__(self):
-        self.__unicode__()
+        return self.__unicode__()
 
     def __unicode__(self):
         return f"{self.names}"
@@ -170,8 +173,11 @@ class olClass(ldap.schema.models.ObjectClass):
         super().__init__(value.split('}', 1)[1])
         self.name_set = set([x.lower() for x in self.names])
 
+    def schema_str(self):
+        return super().__str__()
+
     def __str__(self):
-        self.__unicode__()
+        return self.__unicode__()
 
     def __unicode__(self):
         return f"""{self.oid} {self.names} may -> {self.may} must -> {self.must} sup -> {self.sup}"""

@@ -59,12 +59,27 @@ class DatabaseLdifImport(MigrationAction):
     def __unicode__(self):
         return f"DatabaseLdifImport -> {self.suffix} {self.ldif_path}"
 
+class SchemaAttributeUnsupported(MigrationAction):
+    def __init__(self, attr):
+        self.attr = attr
+
+    def __unicode__(self):
+        return f"SchemaAttributeUnsupported -> {self.attr.__unicode__()}"
+
+    def apply(self, inst):
+        inst.log.debug(f"SchemaAttributeUnsupported -> {self.attr.__unicode__()} (SKIPPING)")
+
 class SchemaAttributeCreate(MigrationAction):
     def __init__(self, attr):
         self.attr = attr
 
     def __unicode__(self):
         return f"SchemaAttributeCreate -> {self.attr.__unicode__()}"
+
+    def apply(self, inst):
+        schema = Schema(inst)
+        inst.log.debug("SchemaAttributeCreate -> %s" % self.attr.schema_str())
+        schema.add(self.attr.schema_attribute, self.attr.schema_str())
 
 class SchemaAttributeInconsistent(MigrationAction):
     def __init__(self, attr, ds_attr):
@@ -81,12 +96,27 @@ class SchemaAttributeAmbiguous(MigrationAction):
     def __unicode__(self):
         return f"SchemaAttributeInconsistent -> {self.attr.__unicode__()}"
 
+class SchemaClassUnsupported(MigrationAction):
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __unicode__(self):
+        return f"SchemaClassUnsupported -> {self.obj.__unicode__()}"
+
+    def apply(self, inst):
+        inst.log.debug(f"SchemaClassUnsupported -> {self.obj.__unicode__()} (SKIPPING)")
+
 class SchemaClassCreate(MigrationAction):
     def __init__(self, obj):
         self.obj = obj
 
     def __unicode__(self):
         return f"SchemaClassCreate -> {self.obj.__unicode__()}"
+
+    def apply(self, inst):
+        schema = Schema(inst)
+        inst.log.debug("SchemaClassCreate -> %s" % self.obj.schema_str())
+        schema.add(self.obj.schema_attribute, self.obj.schema_str())
 
 class SchemaClassInconsistent(MigrationAction):
     def __init__(self, obj, ds_obj):
@@ -213,6 +243,22 @@ class Migration(object):
             # This schema is buggy, we always skip it as we know the 389 version is correct.
             '0.9.2342.19200300.100.4.14',
         ])
+        self._schema_oid_unsupported = set([
+            # RFC4517 othermailbox syntax is not supported on 389.
+            '0.9.2342.19200300.100.1.22',
+            # The dsaquality syntax was removed in rfc4517
+            '0.9.2342.19200300.100.1.49',
+            # single level quality syntax is removed
+            '0.9.2342.19200300.100.1.50',
+            '0.9.2342.19200300.100.1.51',
+            '0.9.2342.19200300.100.1.52',
+            # Pilot person depends no otherMailbox
+            '0.9.2342.19200300.100.4.4',
+            # Pilot DSA needs dsaquality
+            '0.9.2342.19200300.100.4.21',
+            '0.9.2342.19200300.100.4.22',
+
+        ])
         self._gen_migration_plan()
 
     def __unicode__(self):
@@ -234,6 +280,9 @@ class Migration(object):
             # If we have been instructed to ignore this oid, skip.
             if attr.oid in self._schema_oid_do_not_migrate:
                 continue
+            if attr.oid in self._schema_oid_unsupported:
+                self.plan.append(SchemaAttributeUnsupported(attr))
+                continue
             # For the attr, find if anything has a name overlap in any capacity.
             # overlaps = [ (names, ds_attr) for (names, ds_attr) in schema_attr_names if len(names.intersection(attr.name_set)) > 0]
             overlaps = [ ds_attr for ds_attr in schema_attrs if ds_attr.oid == attr.oid]
@@ -254,6 +303,9 @@ class Migration(object):
         for obj in self.olconfig.schema.classes:
             # If we have been instructed to ignore this oid, skip.
             if obj.oid in self._schema_oid_do_not_migrate:
+                continue
+            if obj.oid in self._schema_oid_unsupported:
+                self.plan.append(SchemaClassUnsupported(obj))
                 continue
             # For the attr, find if anything has a name overlap in any capacity.
             overlaps = [ ds_obj for ds_obj in schema_objects if ds_obj.oid == obj.oid]
