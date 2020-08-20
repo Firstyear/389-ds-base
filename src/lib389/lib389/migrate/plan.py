@@ -10,6 +10,7 @@
 from lib389.schema import Schema, Resolver
 from lib389.backend import Backends
 from lib389.migrate.openldap.config import olOverlayType
+from lib389.plugins import MemberOfPlugin, ReferentialIntegrityPlugin, AttributeUniquenessPlugins
 
 import ldap
 
@@ -47,6 +48,14 @@ class DatabaseIndexCreate(MigrationAction):
 class DatabaseReindex(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
+
+    def apply(self, inst):
+        bes = Backends(inst)
+        be = bes.get(self.suffix)
+        be.reindex(wait=True)
+
+    def post(self):
+        raise Exception('not implemented')
 
     def __unicode__(self):
         return f"DatabaseReindex -> {self.suffix}"
@@ -130,6 +139,11 @@ class PluginMemberOfEnable(MigrationAction):
     def __init__(self):
         pass
 
+    def apply(self, inst):
+        mo = MemberOfPlugin(inst)
+        mo.enable()
+        inst.restart()
+
     def __unicode__(self):
         return "PluginMemberOfEnable"
 
@@ -137,12 +151,21 @@ class PluginMemberOfScope(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
 
+    def apply(self, inst):
+        mo = MemberOfPlugin(inst)
+        mo.add_entryscope(self.suffix)
+
     def __unicode__(self):
         return f"PluginMemberOfScope -> {self.suffix}"
 
 class PluginMemberOfFixup(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
+
+    def apply(self, inst):
+        mo = MemberOfPlugin(inst)
+        task = mo.fixup(self.suffix)
+        task.wait()
 
     def __unicode__(self):
         return f"PluginMemberOfFixup -> {self.suffix}"
@@ -152,6 +175,11 @@ class PluginRefintEnable(MigrationAction):
         pass
         # Set refint delay to 0
 
+    def apply(self, inst):
+        rip = ReferentialIntegrityPlugin(inst)
+        rip.set_update_delay(0)
+        rip.enable()
+
     def __unicode__(self):
         return "PluginRefintEnable"
 
@@ -159,12 +187,24 @@ class PluginRefintAttributes(MigrationAction):
     def __init__(self, attr):
         self.attr = attr
 
+    def apply(self, inst):
+        rip = ReferentialIntegrityPlugin(inst)
+        try:
+            rip.add_membership_attr(self.attr)
+        except ldap.TYPE_OR_VALUE_EXISTS:
+            # This is okay, move on.
+            pass
+
     def __unicode__(self):
         return f"PluginRefintAttributes -> {self.attr}"
 
 class PluginRefintScope(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
+
+    def apply(self, inst):
+        rip = ReferentialIntegrityPlugin(inst)
+        rip.add_entryscope(self.suffix)
 
     def __unicode__(self):
         return f"PluginRefintScope -> {self.suffix}"
@@ -174,6 +214,15 @@ class PluginUniqueConfigure(MigrationAction):
     def __init__(self, suffix, attr):
         self.suffix = suffix
         self.attr = attr
+
+    def apply(self, inst):
+        aups = AttributeUniquenessPlugins(inst)
+        aup = aups.create(rdn=f'cn=attr_unique_{self.attr}', properties={
+            'cn': f'cn=attr_unique_{self.attr}',
+            'uniqueness-attribute-name': self.attr,
+            'uniqueness-subtrees': self.suffix,
+            'nsslapd-pluginEnabled': 'on',
+        })
 
     def __unicode__(self):
         return f"PluginUniqueConfigure -> {self.suffix}, {self.attr}"

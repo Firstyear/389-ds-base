@@ -65,7 +65,9 @@ def test_migrate_openldap_slapdd(topology_st):
 
     migration = Migration(config, inst, ldifs)
 
+    print("==== migration plan ====")
     print(migration.__unicode__())
+    print("==== end migration plan ====")
 
     migration.execute_plan()
 
