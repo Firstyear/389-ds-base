@@ -11,8 +11,11 @@ from lib389.schema import Schema, Resolver
 from lib389.backend import Backends
 from lib389.migrate.openldap.config import olOverlayType
 from lib389.plugins import MemberOfPlugin, ReferentialIntegrityPlugin, AttributeUniquenessPlugins
-
 import ldap
+import os
+from ldif import LDIFParser
+from ldif import LDIFWriter
+from uuid import uuid4
 
 class MigrationAction(object):
     def __init__(self):
@@ -22,7 +25,8 @@ class MigrationAction(object):
         raise Exception('not implemented')
 
     def post(self):
-        raise Exception('not implemented')
+        pass
+        # raise Exception('not implemented')
 
     def __unicode__(self):
         raise Exception('not implemented')
@@ -33,6 +37,13 @@ class DatabaseCreate(MigrationAction):
         self.suffix = suffix
         self.uuid = uuid
 
+    def apply(self, inst):
+        bes = Backends(inst)
+        be = bes.create(properties={
+            'cn': self.uuid,
+            'nsslapd-suffix': self.suffix,
+        })
+
     def __unicode__(self):
         return f"DatabaseCreate -> {self.suffix}, {self.uuid}"
 
@@ -40,7 +51,20 @@ class DatabaseIndexCreate(MigrationAction):
     def __init__(self, suffix, olindex):
         self.suffix = suffix
         self.attr = olindex[0]
+        # Will this work with multiple index types
         self.type = olindex[1]
+
+    def apply(self, inst):
+        be = Backends(inst).get(self.suffix)
+        indexes = be.get_indexes()
+        try:
+            # If it exists, return. Could be the case as we created the
+            # BE and the default indexes applied now.
+            indexes.get(self.attr)
+            return
+        except ldap.NO_SUCH_OBJECT:
+            pass
+        be.add_index(self.attr, self.type)
 
     def __unicode__(self):
         return f"DatabaseIndexCreate -> {self.attr} {self.type}, {self.suffix}"
@@ -54,16 +78,71 @@ class DatabaseReindex(MigrationAction):
         be = bes.get(self.suffix)
         be.reindex(wait=True)
 
-    def post(self):
-        raise Exception('not implemented')
-
     def __unicode__(self):
         return f"DatabaseReindex -> {self.suffix}"
+
+class ImportTransformer(LDIFParser):
+    def __init__(self, f_import, f_outport):
+        self.f_outport = f_outport
+        self.writer = LDIFWriter(self.f_outport)
+        super().__init__(f_import)
+
+    def handle(self, dn, entry):
+        attrs = entry.keys()
+        # We don't know what form the keys/attrs are in
+        # so we have to establish our own map of our
+        # idea of these to the attrs idea.
+        amap = dict([(x.lower(), x) for x in attrs])
+
+        # Now we can do transforms
+        # This has to exist ....
+        oc_a = amap['objectclass']
+        # If mo present, as nsMemberOf.
+        try:
+            mo_a = amap['memberof']
+            # If mo_a was found, then mo is present, extend the oc.
+            entry[oc_a] += [b'nsMemberOf']
+        except:
+            # Not found
+            pass
+
+        # strip entryCSN
+        try:
+            ecsn_a = amap['entrycsn']
+            entry.pop(ecsn_a)
+        except:
+            # No ecsn, skip
+            pass
+
+        # strip sco
+        try:
+            sco_a = amap['structuralobjectclass']
+            entry.pop(sco_a)
+        except:
+            # No sco, skip
+            pass
+
+        # Write it out
+        self.writer.unparse(dn, entry)
 
 class DatabaseLdifImport(MigrationAction):
     def __init__(self, suffix, ldif_path):
         self.suffix = suffix
         self.ldif_path = ldif_path
+
+    def apply(self, inst):
+        # Create a unique op id.
+        op_id = str(uuid4())
+        op_path = os.path.join(inst.get_ldif_dir(), f'{op_id}.ldif')
+
+        with open(self.ldif_path, 'r') as f_import:
+            with open(op_path, 'w') as f_outport:
+                p = ImportTransformer(f_import, f_outport)
+                p.parse()
+
+        be = Backends(inst).get(self.suffix)
+        task = be.import_ldif([op_path])
+        task.wait()
 
     def __unicode__(self):
         return f"DatabaseLdifImport -> {self.suffix} {self.ldif_path}"
@@ -211,21 +290,22 @@ class PluginRefintScope(MigrationAction):
 
 class PluginUniqueConfigure(MigrationAction):
     # This enables and configures.
-    def __init__(self, suffix, attr):
+    def __init__(self, suffix, attr, uuid):
         self.suffix = suffix
         self.attr = attr
+        self.uuid = uuid
 
     def apply(self, inst):
         aups = AttributeUniquenessPlugins(inst)
-        aup = aups.create(rdn=f'cn=attr_unique_{self.attr}', properties={
-            'cn': f'cn=attr_unique_{self.attr}',
+        aup = aups.create(properties={
+            'cn': f'cn=attr_unique_{self.attr}_{self.uuid}',
             'uniqueness-attribute-name': self.attr,
             'uniqueness-subtrees': self.suffix,
             'nsslapd-pluginEnabled': 'on',
         })
 
     def __unicode__(self):
-        return f"PluginUniqueConfigure -> {self.suffix}, {self.attr}"
+        return f"PluginUniqueConfigure -> {self.suffix}, {self.attr} {self.uuid}"
 
 class PluginUnknownManual(MigrationAction):
     def __init__(self, overlay):
@@ -412,7 +492,7 @@ class Migration(object):
                 self.plan.append(PluginRefintScope(oldb.suffix))
             elif overlay.otype == olOverlayType.UNIQUE:
                 for attr in overlay.attrs:
-                    self.plan.append(PluginUniqueConfigure(oldb.suffix, attr))
+                    self.plan.append(PluginUniqueConfigure(oldb.suffix, attr, oldb.uuid))
             else:
                 raise Exception("Unknown overlay type, this is a bug!")
 
