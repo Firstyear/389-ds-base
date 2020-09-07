@@ -140,9 +140,10 @@ class DatabaseLdifImport(MigrationAction):
                 p = ImportTransformer(f_import, f_outport)
                 p.parse()
 
-        ### time.sleep?
-
         be = Backends(inst).get(self.suffix)
+        task = be.export_ldif()
+        task.wait()
+
         task = be.import_ldif([op_path])
         task.wait()
 
