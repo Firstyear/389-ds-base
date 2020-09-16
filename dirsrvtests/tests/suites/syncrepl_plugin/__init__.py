@@ -139,7 +139,7 @@ def syncstate_assert(st, sync):
     # Find the primary uuid we expect to see in syncrepl.
     # This will be None if not present.
     acc_uuid = account.get_attr_val_utf8('entryuuid')
-    if acc_uuid is None:
+    if not sync.openldap:
         nsid = account.get_attr_val_utf8('nsuniqueid')
         # nsunique has a diff format, so we change it up.
         # 431cf081-b44311ea-83fdb082-f24d490e
@@ -168,7 +168,7 @@ def syncstate_assert(st, sync):
     assert 1 == len(sync.entries.keys())
     assert 1 == len(sync.present)
     ####################################
-    ## assert sync.present == [acc_uuid]
+    assert sync.present == [acc_uuid]
     assert 0 == len(sync.delete)
     if sync.openldap:
         assert True == sync.refdel
@@ -186,7 +186,7 @@ def syncstate_assert(st, sync):
     assert 1 == len(sync.entries.keys())
     assert 1 == len(sync.present)
     ####################################
-    ## assert sync.present == [acc_uuid]
+    assert sync.present == [acc_uuid]
     assert 0 == len(sync.delete)
     if sync.openldap:
         assert True == sync.refdel
@@ -205,12 +205,16 @@ def syncstate_assert(st, sync):
     assert 1 == len(sync.entries.keys())
     assert 1 == len(sync.present)
     ####################################
-    ## assert sync.present == [acc_uuid]
+    assert sync.present == [acc_uuid]
     assert 0 == len(sync.delete)
     if sync.openldap:
         assert True == sync.refdel
     else:
         assert False == sync.refdel
+
+    # import time
+    # print("attach now ....")
+    # time.sleep(45)
 
     ## Modrdn (out of scope, then back into scope)
     account.rename('uid=test1_modrdn', newsuperior=DEFAULT_SUFFIX)
@@ -223,11 +227,14 @@ def syncstate_assert(st, sync):
     log.debug(f"sd: {sync.delete}, sp: {sync.present} sek: {sync.entries.keys()}")
     assert 0 == len(sync.entries.keys())
     assert 0 == len(sync.present)
-    assert 0 == len(sync.delete)
+    ## WARNING: This test MAY FAIL here if you do not have a new enough python-ldap
+    # due to an ASN.1 parsing bug. You require at least python-ldap 3.3.1
+    assert 1 == len(sync.delete)
+    assert sync.delete == [acc_uuid]
     if sync.openldap:
         assert True == sync.refdel
     else:
-        assert True == sync.refdel
+        assert False == sync.refdel
 
     # Put it back
     account.rename('uid=test1_modrdn', newsuperior=OU_PEOPLE)
@@ -239,7 +246,7 @@ def syncstate_assert(st, sync):
     assert 1 == len(sync.entries.keys())
     assert 1 == len(sync.present)
     ####################################
-    ## assert sync.present == [acc_uuid]
+    assert sync.present == [acc_uuid]
     assert 0 == len(sync.delete)
     if sync.openldap:
         assert True == sync.refdel
@@ -248,10 +255,6 @@ def syncstate_assert(st, sync):
 
     ## Delete
     account.delete()
-
-    # import time
-    # print("attach now ....")
-    # time.sleep(45)
 
     # Check
     log.debug("*test* del")
@@ -265,11 +268,11 @@ def syncstate_assert(st, sync):
     log.debug(f"sd: {sync.delete}, sp: {sync.present} sek: {sync.entries.keys()}")
     assert 0 == len(sync.entries.keys())
     assert 0 == len(sync.present)
-    assert 0 == len(sync.delete)
+    assert 1 == len(sync.delete)
+    assert sync.delete == [acc_uuid]
     ####################################
-    ## assert sync.delete == [acc_uuid]
     if sync.openldap:
         assert True == sync.refdel
     else:
-        assert True == sync.refdel
+        assert False == sync.refdel
 
