@@ -319,7 +319,7 @@ class PluginUnknownManual(MigrationAction):
 
 
 class Migration(object):
-    def __init__(self, olconfig, inst, ldifs=None):
+    def __init__(self, olconfig, inst, ldifs=None, skip_schema_oids=[], skip_overlays=[]):
         """Generate a migration plan from an openldap config, the instance to migrate too
         and an optional dictionary of { suffix: ldif_path }.
 
@@ -332,6 +332,7 @@ class Migration(object):
         self.inst = inst
         self.plan = []
         self.ldifs = ldifs
+        self._overlay_do_not_migrate = set(skip_overlays)
         self._schema_oid_do_not_migrate = set([
             # We pre-modified these as they are pretty core, and we don't want
             # them tampered with
@@ -374,7 +375,7 @@ class Migration(object):
             '1.3.6.1.1.1.2.17', # automount
             # This schema is buggy, we always skip it as we know the 389 version is correct.
             '0.9.2342.19200300.100.4.14',
-        ])
+        ] + skip_schema_oids)
         self._schema_oid_unsupported = set([
             # RFC4517 othermailbox syntax is not supported on 389.
             '0.9.2342.19200300.100.1.22',
@@ -479,6 +480,9 @@ class Migration(object):
 
     def _gen_plugin_plan(self, oldb):
         for overlay in oldb.overlays:
+            if overlay in self._overlay_do_not_migrate:
+                # We have been instructed to ignore this, so move on.
+                continue
             if overlay.otype == olOverlayType.UNKNOWN:
                 self.plan.append(PluginUnknownManual(overlay))
             elif overlay.otype == olOverlayType.MEMBEROF:
