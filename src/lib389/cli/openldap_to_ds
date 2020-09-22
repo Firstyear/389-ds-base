@@ -16,9 +16,15 @@ import signal
 import sys
 from lib389 import DirSrv
 from lib389.cli_base import (
+    connect_instance,
     disconnect_instance,
     setup_script_logger,
     format_error_to_dict)
+from lib389.cli_base.dsrc import dsrc_to_ldap, dsrc_arg_concat
+from lib389._constants import DSRC_HOME
+
+from lib389.migrate.openldap.config import olConfig
+from lib389.migrate.plan import Migration
 
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -99,7 +105,6 @@ parser.add_argument('--no-indexes',
         help="Do not create any indexes as defined in slapd.d"
 )
 
-
 # General options
 parser.add_argument('-D', '--binddn',
         help="The account to bind as for executing operations",
@@ -121,6 +126,14 @@ parser.add_argument('-Z', '--starttls',
         help="Connect with StartTLS",
         default=False, action='store_true'
     )
+parser.add_argument('-b', '--basedn',
+        help=argparse.SUPPRESS,
+        default=None
+    )
+parser.add_argument('-j', '--json',
+        help=argparse.SUPPRESS,
+        default=False, action='store_true'
+    )
 
 # handle a control-c gracefully
 def signal_handler(signal, frame):
@@ -128,7 +141,26 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 def do_migration(inst, log, args):
-    log.info("Did nothing, really well")
+    log.debug("do_migration -- begin preparation --")
+    log.debug("Instance isLocal: %s" % inst.isLocal)
+    # Do the thing
+
+    # Parse the openldap config
+    config = olConfig(args.slapd_config)
+
+    # Do we have any ldifs to import?
+
+    # Create the migration plan.
+
+    # Present it for review.
+
+    # Go ahead?
+
+    # Do the thing.
+
+    # Display the Post Migration Checklist items.
+
+    # Celebrate.
     return False
 
 if __name__ == '__main__':
@@ -141,36 +173,19 @@ if __name__ == '__main__':
     log.debug("Inspired by works of: ITS, The University of Adelaide")
     log.debug("Called with: %s", args)
 
-    # Connect
-    inst = DirSrv(verbose=args.verbose)
-    result = True
+    # Now that we have our args, see how they relate with our instance.
+    dsrc_inst = dsrc_to_ldap(DSRC_HOME, args.instance, log.getChild('dsrc'))
 
-    # Allocate the instance based on name
-    insts = []
-    if args.verbose:
-        insts = inst.list(serverid=args.instance)
-    else:
-        signal.signal(signal.SIGINT, signal_handler)
-        try:
-            insts = inst.list(serverid=args.instance)
-        except (PermissionError, IOError) as e:
-            log.error("Unable to access instance information. Are you running as the correct user? (usually dirsrv or root)")
-            msg = format_error_to_dict(e)
-            log.error("Error: %s" % " - ".join(msg.values()))
-            sys.exit(1)
-        except Exception as e:
-            msg = format_error_to_dict(e)
-            log.error("Error: %s" % " - ".join(msg.values()))
-            sys.exit(1)
-    if len(insts) != 1:
-        log.error("No such instance '%s'" % args.instance)
-        log.error("Unable to access instance information. Are you running as the correct user? (usually dirsrv or root)")
-        sys.exit(1)
+    # Now combine this with our arguments
+    dsrc_inst = dsrc_arg_concat(args, dsrc_inst)
 
-    inst.allocate(insts[0])
-    log.debug('Instance allocated')
+    log.debug("Instance details: %s" % dsrc_inst)
+
+    inst = None
+    result = False
 
     try:
+        inst = connect_instance(dsrc_inst=dsrc_inst, verbose=args.verbose, args=args)
         result = do_migration(inst, log, args)
     except Exception as e:
         log.debug(e, exc_info=True)
