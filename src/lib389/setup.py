@@ -62,12 +62,14 @@ setup(
             'cli/dsconf',
             'cli/dscreate',
             'cli/dsidm',
+            'cli/openldap_2_ds',
             ]),
         ('/usr/share/man/man8', [
             'man/dsctl.8',
             'man/dsconf.8',
             'man/dscreate.8',
             'man/dsidm.8',
+            'man/openldap_2_ds.8',
             ]),
         ('/usr/libexec/dirsrv/', [
             'cli/dscontainer',
