@@ -1,0 +1,188 @@
+#!/usr/bin/python3
+
+# --- BEGIN COPYRIGHT BLOCK ---
+# Copyright (C) 2020 William Brown <william@blackhats.net.au>
+# All rights reserved.
+#
+# License: GPL (version 3 or any later version).
+# See LICENSE for details.
+# --- END COPYRIGHT BLOCK ---
+#
+# PYTHON_ARGCOMPLETE_OK
+
+import argparse
+import argcomplete
+import signal
+import sys
+from lib389 import DirSrv
+from lib389.cli_base import (
+    disconnect_instance,
+    setup_script_logger,
+    format_error_to_dict)
+
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    description="""Migrate from OpenLDAP to 389 Directory Server.
+
+This command automates the process of converting an OpenLDAP server to a 389 Directory Server
+instance. This is a "best effort" as OpenLDAP and 389 Directory Server are not identical,
+so some features still may require hand migration, or can not be migrated at all. This tool
+intends to migrate the majority of major content such as database data, index configuration,
+some overlays (plugins) and schema.
+
+Some content that can *not* be migrated include some overlays (plugins), access controls
+and replication configuration.
+
+This must be run on the server running the 389 Directory Instance as it requires filesystem
+access. You may need to run this as dirsrv or root.
+
+The following is required from your openldap instance:
+
+  * slapd.d configuration directory in ldif format
+  * (optional) ldif file backup of the database from slapcat
+
+These can be created on the OpenLDAP host and copied to the 389 Directory Server host. No
+destructive actions are applied to the OpenLDAP instance.
+
+To create the slapd.d directory from slapd.conf, you should run:
+
+    slaptest -f /etc/openldap/slapd.conf -F /root/slapd.d
+
+To create the ldif backup of the instance, you should run for each backend:
+
+    slapcat -f /etc/openldap/slapd.conf -b SUFFIX -l /root/suffix.ldif
+
+You must already have a 389 Directory Server you want to import into. You can create
+this with the `dscreate` tool. Data and configuration in this instance WILL be
+modified or removed (ie potentially destructive actions).
+
+It is strongly advised you test this tool on a non-production system first to be
+sure the process and changes are understood.
+
+This only needs to be run on the first-instance in a 389 Directory Server topology. All
+other replicas should be configured from this instance post migration.
+""")
+parser.add_argument('-v', '--verbose',
+                    help="Display verbose operation tracing during command execution",
+                    action='store_true', default=False, dest='verbose')
+
+parser.add_argument('instance',
+        help="The name of the ds instance to have openldap data migrated into",
+    )
+parser.add_argument('slapd_config',
+        help="The path to the slapd.d configuration that will be migrated",
+    )
+# Migration options
+parser.add_argument('--confirm',
+        default=False, action='store_true',
+        help="Confirm that you want to apply these actions to the ds instance. By default no actions are taken."
+)
+parser.add_argument('--ignore-overlay', nargs='*',
+        help="Ignore the following overlays from having their configuration migrated, if possible."
+)
+parser.add_argument('--ignore-schema-oid', nargs='*',
+        help="Ignore the following schema attribute or class OIDS from being migrated. This *may* create inconsistent schema which could cause the migration to fail. Use with caution."
+)
+parser.add_argument('--ignore-attribute', nargs='*',
+        help="Ignore the following attributes from entries that are loaded from the ldif. For example, you may not want to import userPassword hashes."
+)
+parser.add_argument('--no-overlays',
+        default=True, action='store_false',
+        help="Do not migrate any overlays."
+)
+parser.add_argument('--no-schema',
+        default=True, action='store_false',
+        help="Do not migrate the schema. This may cause the ldif import to fail."
+)
+parser.add_argument('--no-indexes',
+        default=True, action='store_false',
+        help="Do not create any indexes as defined in slapd.d"
+)
+
+
+# General options
+parser.add_argument('-D', '--binddn',
+        help="The account to bind as for executing operations",
+        default=None
+    )
+parser.add_argument('-w', '--bindpw',
+        help="Password for binddn",
+        default=None
+    )
+parser.add_argument('-W', '--prompt',
+        action='store_true', default=False,
+        help="Prompt for password for the bind DN"
+    )
+parser.add_argument('-y', '--pwdfile',
+        help="Specifies a file containing the password for the binddn",
+        default=None
+    )
+parser.add_argument('-Z', '--starttls',
+        help="Connect with StartTLS",
+        default=False, action='store_true'
+    )
+
+# handle a control-c gracefully
+def signal_handler(signal, frame):
+    print('\n\nExiting...')
+    sys.exit(0)
+
+def do_migration(inst, log, args):
+    log.info("Did nothing, really well")
+    return False
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+    log = setup_script_logger('openldap_to_ds', args.verbose)
+
+    log.debug("The Openldap to 389 Directory Server Migration Tool")
+    # Leave this comment here: UofA let me take this code with me provided
+    # I gave attribution. -- wibrown
+    log.debug("Inspired by works of: ITS, The University of Adelaide")
+    log.debug("Called with: %s", args)
+
+    # Connect
+    inst = DirSrv(verbose=args.verbose)
+    result = True
+
+    # Allocate the instance based on name
+    insts = []
+    if args.verbose:
+        insts = inst.list(serverid=args.instance)
+    else:
+        signal.signal(signal.SIGINT, signal_handler)
+        try:
+            insts = inst.list(serverid=args.instance)
+        except (PermissionError, IOError) as e:
+            log.error("Unable to access instance information. Are you running as the correct user? (usually dirsrv or root)")
+            msg = format_error_to_dict(e)
+            log.error("Error: %s" % " - ".join(msg.values()))
+            sys.exit(1)
+        except Exception as e:
+            msg = format_error_to_dict(e)
+            log.error("Error: %s" % " - ".join(msg.values()))
+            sys.exit(1)
+    if len(insts) != 1:
+        log.error("No such instance '%s'" % args.instance)
+        log.error("Unable to access instance information. Are you running as the correct user? (usually dirsrv or root)")
+        sys.exit(1)
+
+    inst.allocate(insts[0])
+    log.debug('Instance allocated')
+
+    try:
+        result = do_migration(inst, log, args)
+    except Exception as e:
+        log.debug(e, exc_info=True)
+        msg = format_error_to_dict(e)
+        if args.json:
+            sys.stderr.write(f"{json.dumps(msg, indent=4)}\n")
+        else:
+            log.error("Error: %s" % " - ".join(str(val) for val in msg.values()))
+        result = False
+    disconnect_instance(inst)
+
+    # Done!
+    if result is False:
+        sys.exit(1)
+
