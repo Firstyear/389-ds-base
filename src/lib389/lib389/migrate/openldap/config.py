@@ -252,9 +252,8 @@ class olSchema(object):
 
         self.attrs = [olAttribute(x, self.log) for x in self.raw_attrs]
         self.classes = [olClass(x, self.log) for x in self.raw_classes]
-        self.log.debug(f'attrs -> {self.attrs}')
-        self.log.debug(f'classes -> {self.classes}')
-
+        # self.log.debug(f'attrs -> {self.attrs}')
+        # self.log.debug(f'classes -> {self.classes}')
 
 
 class olConfig(object):
@@ -262,6 +261,7 @@ class olConfig(object):
         self.log = log
         if self.log is None:
             self.log = logger
+        self.log.info("Examining OpenLDAP Configuration ...")
         self.log.debug(f"olConfig path -> {path}")
         config_entries = ldif_parse(path, 'cn=config.ldif')
         assert len(config_entries) == 1
@@ -282,6 +282,6 @@ class olConfig(object):
             olDatabase(os.path.join(path, f'cn=config/'), db, self.log)
             for db in dbs
         ]
-        self.log.debug('parsed olConfig')
+        self.log.info('Completed OpenLDAP Configuration Parsing.')
 
 

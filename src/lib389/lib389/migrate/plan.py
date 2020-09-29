@@ -17,20 +17,27 @@ from ldif import LDIFParser
 from ldif import LDIFWriter
 from uuid import uuid4
 
+import logging
+logger = logging.getLogger(__name__)
+
 class MigrationAction(object):
     def __init__(self):
         pass
 
     def apply(self, inst):
-        raise Exception('not implemented')
-
-    def post(self):
         pass
-        # raise Exception('not implemented')
+
+    def post(self, inst):
+        pass
 
     def __unicode__(self):
         raise Exception('not implemented')
 
+    def display_plan(self, log):
+        pass
+
+    def display_post(self, log):
+        pass
 
 class DatabaseCreate(MigrationAction):
     def __init__(self, suffix, uuid):
@@ -46,6 +53,9 @@ class DatabaseCreate(MigrationAction):
 
     def __unicode__(self):
         return f"DatabaseCreate -> {self.suffix}, {self.uuid}"
+
+    def display_plan(self, log):
+        log.info(f" * Database Create -> {self.suffix}")
 
 class DatabaseIndexCreate(MigrationAction):
     def __init__(self, suffix, olindex):
@@ -69,17 +79,23 @@ class DatabaseIndexCreate(MigrationAction):
     def __unicode__(self):
         return f"DatabaseIndexCreate -> {self.attr} {self.type}, {self.suffix}"
 
+    def display_plan(self, log):
+        log.info(f" * Database Add Index -> {self.attr}:{self.type} for {self.suffix}")
+
 class DatabaseReindex(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
 
-    def apply(self, inst):
+    def post(self, inst):
         bes = Backends(inst)
         be = bes.get(self.suffix)
         be.reindex(wait=True)
 
     def __unicode__(self):
         return f"DatabaseReindex -> {self.suffix}"
+
+    def display_plan(self, log):
+        log.info(f" * Database Reindex -> {self.suffix}")
 
 class ImportTransformer(LDIFParser):
     def __init__(self, f_import, f_outport):
@@ -150,6 +166,12 @@ class DatabaseLdifImport(MigrationAction):
     def __unicode__(self):
         return f"DatabaseLdifImport -> {self.suffix} {self.ldif_path}"
 
+    def display_plan(self, log):
+        log.info(f" * Database Import Ldif -> {self.suffix} from {self.ldif_path}")
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Database Imported Content is Correct -> {self.suffix}")
+
 class SchemaAttributeUnsupported(MigrationAction):
     def __init__(self, attr):
         self.attr = attr
@@ -159,6 +181,13 @@ class SchemaAttributeUnsupported(MigrationAction):
 
     def apply(self, inst):
         inst.log.debug(f"SchemaAttributeUnsupported -> {self.attr.__unicode__()} (SKIPPING)")
+
+    def display_plan(self, log):
+        log.info(f" * Schema Skip Unsupported Attribute -> {self.attr.names[0]} ({self.attr.oid})")
+
+    def display_post(self, log):
+        pass
+
 
 class SchemaAttributeCreate(MigrationAction):
     def __init__(self, attr):
@@ -172,6 +201,9 @@ class SchemaAttributeCreate(MigrationAction):
         inst.log.debug("SchemaAttributeCreate -> %s" % self.attr.schema_str())
         schema.add(self.attr.schema_attribute, self.attr.schema_str())
 
+    def display_plan(self, log):
+        log.info(f" * Schema Create Attribute -> {self.attr.names[0]} ({self.attr.oid})")
+
 class SchemaAttributeInconsistent(MigrationAction):
     def __init__(self, attr, ds_attr):
         self.ds_attr = ds_attr
@@ -180,12 +212,24 @@ class SchemaAttributeInconsistent(MigrationAction):
     def __unicode__(self):
         return f"SchemaAttributeInconsistent -> {self.ds_attr} to {self.attr.__unicode__()}"
 
+    def display_plan(self, log):
+        log.info(f" * Schema Skip Inconsistent Attribute -> {self.attr.names[0]} ({self.attr.oid})")
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Schema Inconsistent Attribute -> {self.obj.names[0]} ({self.obj.oid})")
+
 class SchemaAttributeAmbiguous(MigrationAction):
     def __init__(self, attr):
         self.attr = attr
 
     def __unicode__(self):
-        return f"SchemaAttributeInconsistent -> {self.attr.__unicode__()}"
+        return f"SchemaAttributeAmbiguous -> {self.attr.__unicode__()}"
+
+    def display_plan(self, log):
+        log.info(f" * Schema Skip Abmiguous Attribute -> {self.attr.names[0]} ({self.attr.oid})")
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Schema Ambiguous Attribute -> {self.obj.names[0]} ({self.obj.oid})")
 
 class SchemaClassUnsupported(MigrationAction):
     def __init__(self, obj):
@@ -196,6 +240,9 @@ class SchemaClassUnsupported(MigrationAction):
 
     def apply(self, inst):
         inst.log.debug(f"SchemaClassUnsupported -> {self.obj.__unicode__()} (SKIPPING)")
+
+    def display_plan(self, log):
+        log.info(f" * Schema Skip Unsupported ObjectClass -> {self.obj.names[0]} ({self.obj.oid})")
 
 class SchemaClassCreate(MigrationAction):
     def __init__(self, obj):
@@ -209,6 +256,9 @@ class SchemaClassCreate(MigrationAction):
         inst.log.debug("SchemaClassCreate -> %s" % self.obj.schema_str())
         schema.add(self.obj.schema_attribute, self.obj.schema_str())
 
+    def display_plan(self, log):
+        log.info(f" * Schema Create ObjectClass -> {self.obj.names[0]} ({self.obj.oid})")
+
 class SchemaClassInconsistent(MigrationAction):
     def __init__(self, obj, ds_obj):
         self.ds_obj = ds_obj
@@ -217,6 +267,12 @@ class SchemaClassInconsistent(MigrationAction):
     def __unicode__(self):
         return f"SchemaClassInconsistent -> {self.ds_obj} to {self.obj.__unicode__()}"
 
+    def display_plan(self, log):
+        log.info(f" * Schema Skip Inconsistent ObjectClass -> {self.obj.names[0]} ({self.obj.oid})")
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Schema Inconistent ObjectClass -> {self.obj.names[0]} ({self.obj.oid})")
+
 class PluginMemberOfEnable(MigrationAction):
     def __init__(self):
         pass
@@ -224,10 +280,16 @@ class PluginMemberOfEnable(MigrationAction):
     def apply(self, inst):
         mo = MemberOfPlugin(inst)
         mo.enable()
-        inst.restart()
+        # inst.restart()
 
     def __unicode__(self):
         return "PluginMemberOfEnable"
+
+    def display_plan(self, log):
+        log.info(f" * Plugin:MemberOf Enable")
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Plugin:MemberOf Migrated Configuration is Correct")
 
 class PluginMemberOfScope(MigrationAction):
     def __init__(self, suffix):
@@ -235,22 +297,31 @@ class PluginMemberOfScope(MigrationAction):
 
     def apply(self, inst):
         mo = MemberOfPlugin(inst)
-        mo.add_entryscope(self.suffix)
+        try:
+            mo.add_entryscope(self.suffix)
+        except ldap.TYPE_OR_VALUE_EXISTS:
+            pass
 
     def __unicode__(self):
         return f"PluginMemberOfScope -> {self.suffix}"
+
+    def display_plan(self, log):
+        log.info(f" * Plugin:MemberOf Add Suffix -> {self.suffix}")
 
 class PluginMemberOfFixup(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
 
-    def apply(self, inst):
+    def post(self, inst):
         mo = MemberOfPlugin(inst)
         task = mo.fixup(self.suffix)
         task.wait()
 
     def __unicode__(self):
         return f"PluginMemberOfFixup -> {self.suffix}"
+
+    def display_plan(self, log):
+        log.info(f" * Plugin:MemberOf Regenerate (Fixup) -> {self.suffix}")
 
 class PluginRefintEnable(MigrationAction):
     def __init__(self):
@@ -264,6 +335,12 @@ class PluginRefintEnable(MigrationAction):
 
     def __unicode__(self):
         return "PluginRefintEnable"
+
+    def display_plan(self, log):
+        log.info(f" * Plugin:Referential Integrity Enable")
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Plugin:Referential Integrity Migrated Configuration is Correct")
 
 class PluginRefintAttributes(MigrationAction):
     def __init__(self, attr):
@@ -280,16 +357,27 @@ class PluginRefintAttributes(MigrationAction):
     def __unicode__(self):
         return f"PluginRefintAttributes -> {self.attr}"
 
+    def display_plan(self, log):
+        log.info(f" * Plugin:Referential Integrity Add Attribute -> {self.attr}")
+
 class PluginRefintScope(MigrationAction):
     def __init__(self, suffix):
         self.suffix = suffix
 
     def apply(self, inst):
         rip = ReferentialIntegrityPlugin(inst)
-        rip.add_entryscope(self.suffix)
+        try:
+            rip.add_entryscope(self.suffix)
+        except ldap.TYPE_OR_VALUE_EXISTS:
+            # This is okay, move on.
+            pass
 
     def __unicode__(self):
         return f"PluginRefintScope -> {self.suffix}"
+
+    def display_plan(self, log):
+        log.info(f" * Plugin:Referential Integrity Add Scope -> {self.suffix}")
+
 
 class PluginUniqueConfigure(MigrationAction):
     # This enables and configures.
@@ -300,15 +388,22 @@ class PluginUniqueConfigure(MigrationAction):
 
     def apply(self, inst):
         aups = AttributeUniquenessPlugins(inst)
-        aup = aups.create(properties={
-            'cn': f'cn=attr_unique_{self.attr}_{self.uuid}',
-            'uniqueness-attribute-name': self.attr,
-            'uniqueness-subtrees': self.suffix,
-            'nsslapd-pluginEnabled': 'on',
-        })
+        try:
+            aup = aups.create(properties={
+                'cn': f'cn=attr_unique_{self.attr}_{self.uuid}',
+                'uniqueness-attribute-name': self.attr,
+                'uniqueness-subtrees': self.suffix,
+                'nsslapd-pluginEnabled': 'on',
+            })
+        except ldap.ALREADY_EXISTS:
+            # This is okay, move on.
+            pass
 
     def __unicode__(self):
         return f"PluginUniqueConfigure -> {self.suffix}, {self.attr} {self.uuid}"
+
+    def display_plan(self, log):
+        log.info(f" * Plugin:Unique Add Attribute and Suffix -> {self.attr} {self.suffix}")
 
 class PluginUnknownManual(MigrationAction):
     def __init__(self, overlay):
@@ -316,6 +411,9 @@ class PluginUnknownManual(MigrationAction):
 
     def __unicode__(self):
         return f"PluginUnknownManual -> {self.overlay.name}, {self.overlay.classes}"
+
+    def display_post(self, log):
+        log.info(f" * [ ] - Review Unsupported Overlay:{self.overlay.name}:{self.overlay.classes} Configuration and Possible Alternatives for 389 Directory Server")
 
 
 class Migration(object):
@@ -536,13 +634,39 @@ class Migration(object):
         self._gen_import_plan()
 
 
-    def execute_plan(self):
+    def execute_plan(self, log=None):
         """ Do it!"""
+        if log is None:
+            log = logger
+
+        count = 1
+
         # First apply everything
         for item in self.plan:
             item.apply(self.inst)
+            log.info(f"migration: {count} / {len(self.plan)} complete ...")
+            count += 1
 
-        # Then do post
+        # Then do post actions
+        count = 1
         for item in self.plan:
-            item.post()
+            item.post(self.inst)
+            log.info(f"post: {count} / {len(self.plan)} complete ...")
+            count += 1
+
+    def display_plan_review(self, log):
+        """Given an output log sink, display the migration plan"""
+        for item in self.plan:
+            item.display_plan(log)
+
+    def display_plan_post_review(self, log):
+        """Given an output log sink, display the post migration checklist elements"""
+        # There are some items we must always provide.
+        log.info(f" * [ ] - Create/Migrate Database Access Controls (ACI)")
+        log.info(f" * [ ] - Enable and Verify TLS (LDAPS) Operation")
+        log.info(f" * [ ] - Schedule Automatic Backups")
+        log.info(f" * [ ] - Verify Accounts Can Bind Correctly")
+
+        for item in self.plan:
+            item.display_post(log)
 

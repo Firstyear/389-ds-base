@@ -98,8 +98,8 @@ def test_migrate_openldap_slapdd_skip_elements(topology_st):
 
     # 1.3.6.1.4.1.5322.13.1.1 is namedObject, so check that isn't there
 
-    migration = Migration(config, inst, ldifs
-        skip_oids=['1.3.6.1.4.1.5322.13.1.1'],
+    migration = Migration(config, inst, ldifs,
+        skip_schema_oids=['1.3.6.1.4.1.5322.13.1.1'],
         skip_overlays=[olOverlayType.UNIQUE],
     )
 
