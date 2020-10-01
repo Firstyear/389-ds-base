@@ -35,29 +35,51 @@ This command automates the process of converting an OpenLDAP server to a 389 Dir
 instance. This is a "best effort" as OpenLDAP and 389 Directory Server are not identical,
 so some features still may require hand migration, or can not be migrated at all. This tool
 intends to migrate the majority of major content such as database data, index configuration,
-some overlays (plugins) and schema.
+schema and some overlays (plugins).
 
 Some content that can *not* be migrated include some overlays (plugins), access controls
-and replication configuration.
+and replication configuration. Examples of plugins that can not be migrated:
+
+* Access/Audit logging (built into 389-ds by default)
+* Chaining (Requires manual migration, may not be equivalent)
+* Constraints (No equivalent plugin)
+* Dynamic Directory Services (Requires manual migration to Class of Service Plugin)
+* Dynamic Groups/Lists (Requires manual migration to Roles Plugin)
+* Proxy Cache (No equivalent plugin, 389-ds supports read-only replicas)
+* Password Policy (Built into 389-ds, requires manual migration)
+* Rewrite/Remap (No equivalent plugin)
+* Sync Provider (Requires manual migration to Content Sync Plugin)
+* Value Sorting (No equivalent plugin)
 
 This must be run on the server running the 389 Directory Instance as it requires filesystem
-access. You may need to run this as dirsrv or root.
+access. You must run this tool as either root or dirsrv users.
 
 The following is required from your openldap instance:
 
-  * slapd.d configuration directory in ldif format
+  * slapd.d configuration directory in ldif/dynamic format
   * (optional) ldif file backup of the database from slapcat
 
 These can be created on the OpenLDAP host and copied to the 389 Directory Server host. No
 destructive actions are applied to the OpenLDAP instance.
 
-To create the slapd.d directory from slapd.conf, you should run:
+If you are already using the ldif/dynamic format from /etc/openldap/slapd.d, you should
+take a copy of this to use in the migration.
+
+    cp -a /etc/openldap/slapd.d /root/slapd.d
+
+If you are using the slapd.conf configuration file, you can convert this to the dynamic
+configuration without affecting your running instance with:
 
     slaptest -f /etc/openldap/slapd.conf -F /root/slapd.d
 
-To create the ldif backup of the instance, you should run for each backend:
+To optionally allow your database content to be migrated you may create an ldif backup of the
+content that 389 Directory Server can import. You must run this for each backend (suffix)
+of your instance with the command:
 
+    # If using slapd.conf config format
     slapcat -f /etc/openldap/slapd.conf -b SUFFIX -l /root/suffix.ldif
+    # If using slapd.d config format
+    slapcat -F /etc/openldap/slapd.d -b SUFFIX -l /root/suffix.ldif
 
 You must already have a 389 Directory Server you want to import into. You can create
 this with the `dscreate` tool. Data and configuration in this instance WILL be
