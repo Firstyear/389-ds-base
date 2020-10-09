@@ -266,6 +266,7 @@ class Slapd2Base(Options2):
         self._options['db_home_dir'] = ds_paths.db_home_dir
         self._type['db_home_dir'] = str
         self._helptext['db_home_dir'] = "Sets the memory-mapped database files location of the instance."
+        self._advanced['db_home_dir'] = True
 
         self._options['ldif_dir'] = ds_paths.ldif_dir
         self._type['ldif_dir'] = str
