@@ -559,7 +559,7 @@ class Backend(DSLdapObject):
 
         return (dn, valid_props)
 
-    def create(self, dn=None, properties=None, basedn=DN_LDBM):
+    def create(self, dn=None, properties=None, basedn=DN_LDBM, create_mapping_tree=True):
         """Add a new backend entry, create mapping tree,
          and, if requested, sample entries
 
@@ -569,6 +569,8 @@ class Backend(DSLdapObject):
         :type properties: dict
         :param basedn: Base DN of the new entry
         :type basedn: str
+        :param create_mapping_tree: If a related mapping tree node should be created
+        :type create_mapping_tree: bool
 
         :returns: DSLdapObject of the created entry
         """
@@ -593,16 +595,19 @@ class Backend(DSLdapObject):
         super(Backend, self).create(dn, properties, basedn)
 
         # We check if the mapping tree exists in create, so do this *after*
-        properties = {
-            'cn': self._nprops_stash['nsslapd-suffix'],
-            'nsslapd-state': 'backend',
-            'nsslapd-backend': self._nprops_stash['cn'],
-        }
-        if parent_suffix:
-            # This is a subsuffix, set the parent suffix
-            properties['nsslapd-parent-suffix'] = parent_suffix
-        self._mts.create(properties=properties)
-        if sample_entries is not False:
+        if create_mapping_tree is True:
+            properties = {
+                'cn': self._nprops_stash['nsslapd-suffix'],
+                'nsslapd-state': 'backend',
+                'nsslapd-backend': self._nprops_stash['cn'],
+            }
+            if parent_suffix:
+                # This is a subsuffix, set the parent suffix
+                properties['nsslapd-parent-suffix'] = parent_suffix
+            self._mts.create(properties=properties)
+
+        # We can't create the sample entries unless a mapping tree was installed.
+        if sample_entries is not False and create_mapping_tree is True:
             self.create_sample_entries(sample_entries)
         return self
 
