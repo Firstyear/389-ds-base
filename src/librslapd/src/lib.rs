@@ -3,8 +3,8 @@
 //
 // Remember this is just a c-bindgen stub, all logic should come from slapd!
 
-extern crate libc;
 extern crate concread;
+extern crate libc;
 
 use slapd;
 
