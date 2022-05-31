@@ -194,7 +194,7 @@ extern int ldbm_warn_if_no_db;
  * The candidate list size at which it is cheaper to apply the filter test
  * to the whole list than to continue ANDing in IDLs.
  */
-#define FILTER_TEST_THRESHOLD (NIDS)10
+#define FILTER_TEST_THRESHOLD (NIDS)0
 
 /* flags to indicate what kind of startup the dblayer should do */
 #define DBLAYER_IMPORT_MODE                 0x1
