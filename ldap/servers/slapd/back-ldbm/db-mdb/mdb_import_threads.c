@@ -737,7 +737,7 @@ get_entry_type(WorkerQueueData_t *wqelmt, Slapi_DN *sdn)
     int len = SLAPI_ATTR_UNIQUEID_LENGTH;
     const char *ndn = slapi_sdn_get_ndn(sdn);
 
-    if (slapi_be_issuffix(be, sdn) && (wqelmt->wait_id == 1)) {
+    if (slapi_be_issuffix(be, sdn)) {
         return DNRC_SUFFIX;
     }
     if (PL_strncasecmp(ndn, SLAPI_ATTR_UNIQUEID, len) || ndn[len] != '=') {
