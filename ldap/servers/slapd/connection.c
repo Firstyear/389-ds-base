@@ -76,7 +76,11 @@ static PRInt32 work_q_stack_size;     /* size of work_q_stack */
 static PRInt32 work_q_stack_size_max; /* max size of work_q_stack */
 static PRInt32 op_shutdown = 0;       /* if non-zero, server is shutting down */
 
-#define LDAP_SOCKET_IO_BUFFER_SIZE 512 /* Size of the buffer we give to the I/O system for reads */
+/* Default size of the buffer we give to the I/O system for reads */
+#define LDAP_SOCKET_IO_BUFFER_SIZE 2048
+/* The maximum size of the buffer we can resize up to - BUFSIZ is from stdio.h and defaults to 8192 */
+#define LDAP_SOCKET_IO_BUFFER_SIZE_MAX BUFSIZ
+
 
 static struct Slapi_work_q *
 create_work_q(void)
@@ -955,8 +959,7 @@ connection_free_private_buffer(Connection *conn)
 #define CONN_DONE 3
 #define CONN_TIMEDOUT 4
 
-#define CONN_TURBO_TIMEOUT_INTERVAL 100 /* milliseconds */
-#define CONN_TURBO_TIMEOUT_MAXIMUM 5 /* attempts * interval IE 2000ms with 400 * 5 */
+#define CONN_TURBO_TIMEOUT_INTERVAL 10 /* milliseconds */
 #define CONN_TURBO_CHECK_INTERVAL 5      /* seconds */
 #define CONN_TURBO_PERCENTILE 50         /* proportion of threads allowed to be in turbo mode */
 #define CONN_TURBO_HYSTERESIS 0          /* avoid flip flopping in and out of turbo mode */
@@ -1108,12 +1111,13 @@ connection_read_ldap_data(Connection *conn, PRInt32 *err)
     if (ret < 0) {
         *err = PR_GetError();
     } else if (CONNECTION_BUFFER_ADAPT == conn->c_private->use_buffer) {
-        if ((ret == conn->c_private->c_buffer_size) && (conn->c_private->c_buffer_size < BUFSIZ)) {
+        if ((ret == conn->c_private->c_buffer_size) && (conn->c_private->c_buffer_size < LDAP_SOCKET_IO_BUFFER_SIZE_MAX)) {
             /* we read exactly what we requested - there could be more that we could have read */
             /* so increase the buffer size */
             conn->c_private->c_buffer_size *= 2;
-            if (conn->c_private->c_buffer_size > BUFSIZ) {
-                conn->c_private->c_buffer_size = BUFSIZ;
+            /* clamp to maximum */
+            if (conn->c_private->c_buffer_size > LDAP_SOCKET_IO_BUFFER_SIZE_MAX) {
+                conn->c_private->c_buffer_size = LDAP_SOCKET_IO_BUFFER_SIZE_MAX;
             }
             conn->c_private->c_buffer = slapi_ch_realloc(conn->c_private->c_buffer, conn->c_private->c_buffer_size);
         }
